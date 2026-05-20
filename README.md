@@ -191,18 +191,22 @@ The unit test for this scenario fires 50 concurrent settlement attempts against 
 ## Local environment
 
 ```bash
-docker compose up         # postgres, redis, api, worker
-npm run migrate           # schema, RLS policies, indexes
-npm run seed              # two tenants, products, an event with limited stock
-npm test                  # full suite including the concurrency and leak tests
+cp .env.example .env       # uses vivfy_app role (non-superuser; see below)
+docker compose up -d       # postgres + redis with healthchecks
+npm install
+npx prisma generate
+npm test                   # currently runs the tenant-leak suite
+npm run start:dev          # boots the API on :3000 with GET /health
 ```
 
-The seed creates two tenants on purpose, so the leak test can attempt cross-tenant access and assert it is denied.
+The Postgres container loads `db/init.sql` from `docker-entrypoint-initdb.d` on first start. That script creates the schema, enables and forces RLS on every multi-tenant table, and provisions two roles: `vivfy` (superuser, owns the tables) and `vivfy_app` (non-superuser, what the app and tests connect as). The split matters because Postgres superusers bypass RLS unconditionally — without a dedicated non-superuser role, the policies look enforced but are not.
+
+The leak test seeds two tenants in `beforeAll` and asserts that queries from tenant A cannot read, update, or delete tenant B's rows, and that queries without a tenant context return nothing at all.
 
 ## Status and weekly plan
 
 - [x] Architecture decisions documented (this README)
-- [ ] Week 1: Docker Compose + Prisma schema + RLS policies + tenant-leak test
+- [x] Week 1: Docker Compose + Prisma schema + RLS policies + tenant-leak test
 - [ ] Week 2: Settlement worker + `SELECT FOR UPDATE` + 50-concurrent oversell test
 - [ ] Week 3: Webhook inbox + BullMQ wiring + duplicate-webhook test (same event x10, one effect)
 - [ ] Week 4: Sequence diagram, runbook, commit-history cleanup
