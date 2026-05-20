@@ -1,0 +1,157 @@
+// Prisma schema for the VIVFY Transaction Engine.
+//
+// IMPORTANT: this schema is the type contract for the Prisma client only.
+// The actual database schema is created by db/init.sql at container start.
+// Keep both files in sync when adding columns or tables.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  products Product[]
+  events   Event[]
+  carts    Cart[]
+  orders   Order[]
+  tickets  Ticket[]
+
+  @@map("tenants")
+}
+
+model Product {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  name       String
+  unitPrice  Int      @map("unit_price")
+  stockCount Int      @default(0) @map("stock_count")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+
+  @@index([tenantId])
+  @@map("products")
+}
+
+model Event {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @map("tenant_id") @db.Uuid
+  name             String
+  unitPrice        Int      @map("unit_price")
+  availableTickets Int      @default(0) @map("available_tickets")
+  startsAt         DateTime @map("starts_at") @db.Timestamptz
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+  tickets    Ticket[]
+
+  @@index([tenantId])
+  @@map("events")
+}
+
+model Cart {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  status      String   @default("pending")
+  totalAmount Int      @map("total_amount")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  tenant Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  items  CartItem[]
+  order  Order?
+
+  @@index([tenantId])
+  @@map("carts")
+}
+
+model CartItem {
+  id        String  @id @default(uuid()) @db.Uuid
+  cartId    String  @map("cart_id") @db.Uuid
+  productId String? @map("product_id") @db.Uuid
+  eventId   String? @map("event_id") @db.Uuid
+  qty       Int
+  unitPrice Int     @map("unit_price")
+
+  cart    Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id])
+  event   Event?   @relation(fields: [eventId], references: [id])
+
+  @@index([cartId])
+  @@map("cart_items")
+}
+
+model Order {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  cartId      String   @unique @map("cart_id") @db.Uuid
+  totalAmount Int      @map("total_amount")
+  status      String   @default("settled")
+  settledAt   DateTime @default(now()) @map("settled_at") @db.Timestamptz
+
+  tenant  Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cart    Cart        @relation(fields: [cartId], references: [id])
+  items   OrderItem[]
+  tickets Ticket[]
+
+  @@index([tenantId])
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String  @id @default(uuid()) @db.Uuid
+  orderId   String  @map("order_id") @db.Uuid
+  productId String? @map("product_id") @db.Uuid
+  eventId   String? @map("event_id") @db.Uuid
+  qty       Int
+  unitPrice Int     @map("unit_price")
+
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id])
+  event   Event?   @relation(fields: [eventId], references: [id])
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model Ticket {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  orderId   String   @map("order_id") @db.Uuid
+  eventId   String   @map("event_id") @db.Uuid
+  code      String   @unique
+  status    String   @default("valid")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order  Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  event  Event  @relation(fields: [eventId], references: [id])
+
+  @@index([tenantId])
+  @@index([orderId])
+  @@map("tickets")
+}
+
+model WebhookInbox {
+  id            String    @id @default(uuid()) @db.Uuid
+  transactionId String    @unique @map("transaction_id")
+  payload       Json
+  receivedAt    DateTime  @default(now()) @map("received_at") @db.Timestamptz
+  processedAt   DateTime? @map("processed_at") @db.Timestamptz
+  status        String    @default("pending")
+  errorMessage  String?   @map("error_message")
+
+  @@map("webhook_inbox")
+}
